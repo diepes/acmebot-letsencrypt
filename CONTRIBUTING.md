@@ -13,8 +13,8 @@ Thanks for your interest in contributing to Acmebot.
 ### Prerequisites
 
 - .NET SDK 10
+- Rust (stable toolchain)
 - Azure CLI
-- Bicep CLI support through Azure CLI
 - Git
 
 ### Clone the repository
@@ -34,6 +34,15 @@ dotnet build -c Release ./Acmebot.slnx
 dotnet format --verify-no-changes --verbosity detailed --no-restore ./Acmebot.slnx
 ```
 
+For changes to the Rust ACME client (`rust/acmebot-acme`), also run:
+
+```bash
+scripts/ci/pebble-acme-test.sh
+```
+
+This is the same check CI runs: `cargo test` plus a live certificate issuance against
+a local Pebble CA. See `CONTEXT.md` for background on the Rust rewrite.
+
 These commands cover the contributor-facing validation checks.
 
 ## Pull Request Guidelines
@@ -46,15 +55,12 @@ These commands cover the contributor-facing validation checks.
 
 ## Release Publishing
 
-The `Publish` workflow runs for version tags such as `v5.0.0`. Before pushing the tag, create a matching draft GitHub Release. The workflow uploads the Function App package, publishes the CLI package to NuGet, and then publishes the draft release.
-
-NuGet publishing uses Trusted Publishing. Configure a nuget.org trusted publishing policy for repository `polymind-inc/acmebot` and workflow file `publish.yml`, then set the repository secret `NUGET_USER` to the nuget.org profile name used by that policy.
+The `Release` workflow runs for version tags such as `v5.0.0`. Before pushing the tag, create a matching draft GitHub Release. The workflow uploads the Function App package and then publishes the draft release.
 
 ## Submission Checklist
 
 - Build succeeds locally.
 - Formatting check passes locally.
-- Deployment template changes are validated with Bicep.
 - The pull request description explains the problem and the proposed fix.
 
 ## Code of Conduct
