@@ -1,8 +1,9 @@
 <h1 align="center">
-  Acmebot for Microsoft Azure
+  Acmebot for Microsoft Azure KV
 </h1>
 <p align="center">
   ACME SSL/TLS certificate automation for Microsoft Azure, built around DNS-01 validation and Azure Key Vault
+  Forked and ported to rust from - https://github.com/polymind-inc/acmebot
   <br>
   (App Service / Container Apps / Application Gateway / Front Door / Web PubSub / Event Grid / others)
 </p>
@@ -56,41 +57,12 @@ Acmebot is designed for teams that need to:
 
 ## Deployment
 
-Acmebot **v5 is generally available**. Deploy the latest release with a single click. The template provisions the required Function App ([Flex Consumption](https://learn.microsoft.com/en-us/azure/azure-functions/flex-consumption-plan)), Storage, Application Insights, Log Analytics, and optionally a new Key Vault.
-
-The v5 deployment template supports the Azure public cloud only because Flex Consumption is not available in Azure China or Azure Government.
-
-<a href="https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fpolymind-inc%2Facmebot%2Fmaster%2Fdeploy%2Fazuredeploy.json/uiFormDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2Fpolymind-inc%2Facmebot%2Fmaster%2Fdeploy%2FuiFormDefinition.json" target="_blank"><img src="https://aka.ms/deploytoazurebutton" /></a>
-
-For detailed setup instructions and DNS provider configuration, see the [Getting Started](https://acmebot.dev/guide/getting-started.html) guide.
-
-## Sponsors
-
-[![ZEN Architects](docs/images/zenarchitects.png)](https://zenarchitects.co.jp)
-
-Thank you for your support of our development. Interested in supporting the project? [Become a Sponsor](https://github.com/sponsors/shibayan)
-
-## Thanks
-
-- [Durable Functions](https://github.com/Azure/azure-functions-durable-extension) by @cgillum and contributors
-- [DnsClient.NET](https://github.com/MichaCo/DnsClient.NET) by @MichaCo
-
-## Commercial Support
-
-Commercial support for Acmebot v5 is now available from Polymind Inc.
-
-Commercial support is optional and intended for organizations running Acmebot in production. It can cover deployment planning, v4-to-v5 migration, Azure and DNS provider configuration, troubleshooting, and operational guidance.
-
-Acmebot remains fully open source and free to use under the Apache License 2.0. Community questions and bug reports continue to be handled through GitHub Discussions and Issues.
-
-To discuss commercial support, visit the [Polymind Acmebot support page](https://polymind.jp/acmebot) or see the [Support guide](https://acmebot.dev/guide/support.html).
 
 ## Community
 
 - [Contributing Guide](CONTRIBUTING.md)
 - [Support](SUPPORT.md)
 - [Security Policy](SECURITY.md)
-- [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ## License
 

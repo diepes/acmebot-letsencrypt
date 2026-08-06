@@ -399,3 +399,21 @@ FodyWeavers.xsd
 
 # C# Dev Kit for Visual Studio Code
 *.csproj.lscache
+
+# Environment variables
+.env
+
+# Local dev tooling (downloaded binaries, not committed)
+.tools/
+
+# Rust (rust/acmebot-acme)
+/rust/target/
+**/*.rs.bk
+
+# Output from the Pebble parity harnesses (tools/pebble-parity, rust/acmebot-acme examples)
+*.dotnet.pem
+*.rust.pem
+
+# Core dumps
+core
+core.*
