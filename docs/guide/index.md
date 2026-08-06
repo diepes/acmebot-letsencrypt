@@ -55,8 +55,6 @@ The dashboard is a same-origin web app served by the Function App. It calls the 
 | Goal | Start here |
 | --- | --- |
 | Deploy a new environment | [Getting Started](./getting-started) |
-| Understand portal template inputs | [Deployment](./deployment) |
-| Migrate an existing v4 deployment | [Migrating from v4 to v5](./migration-v5) |
 | Issue, renew, or revoke a certificate | [Dashboard](./dashboard) |
 | Configure Azure DNS, Cloudflare, Route 53, or another DNS provider | [DNS Providers](./dns-providers) |
 | Use EAB or a CA other than Let's Encrypt | [Certificate Authorities](./certificate-authorities) |

@@ -32,7 +32,7 @@ If a verified CA requires external account binding, the deployment form fixes th
 
 ## 2. Deploy Acmebot
 
-Open [Deployment](./deployment) and start the Azure Public deployment template. During deployment:
+Start the Azure Public deployment template. During deployment:
 
 1. Select the subscription, resource group, and region.
 2. Choose a resource naming mode.

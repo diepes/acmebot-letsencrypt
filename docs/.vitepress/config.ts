@@ -9,13 +9,6 @@ const guideSidebar = [
     ]
   },
   {
-    text: "Deploy",
-    items: [
-      { text: "Deployment", link: "/guide/deployment" },
-      { text: "Migrating from v4 to v5", link: "/guide/migration-v5" }
-    ]
-  },
-  {
     text: "Configure",
     items: [
       { text: "DNS Providers", link: "/guide/dns-providers" },
@@ -72,7 +65,6 @@ export default defineConfig({
     nav: [
       { text: "Guide", link: "/guide/" },
       { text: "Reference", link: "/reference/configuration" },
-      { text: "Deploy", link: "/guide/deployment" },
       { text: "Support", link: "/guide/support" },
       { text: "GitHub", link: "https://github.com/polymind-inc/acmebot" }
     ],
