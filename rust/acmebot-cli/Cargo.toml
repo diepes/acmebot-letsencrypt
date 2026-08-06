@@ -1,0 +1,18 @@
+[package]
+name = "acmebot-cli"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "General-purpose ACME v2 certificate issuance CLI built on acmebot-acme"
+
+[[bin]]
+name = "acmebot"
+path = "src/main.rs"
+
+[dependencies]
+acmebot-acme = { path = "../acmebot-acme" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+clap = { version = "4", features = ["derive"] }
+rcgen = "0.13"
+url = "2"

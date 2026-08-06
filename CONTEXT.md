@@ -169,4 +169,27 @@ actually removed (see the C# removal plan below).
 - RS256/ES384/ES512 signer support (only ES256/P-256 is implemented in
   `rust/acmebot-acme` so far)
 
+### Container image: `rust/acmebot-cli` (the `acmebot` binary)
+
+The project is now container/Kubernetes-only (all Bicep/ARM deployment code and
+docs have been removed — see `deploy/k8s/`). The `Dockerfile` no longer builds the
+.NET Azure Functions app; it builds `rust/acmebot-cli`, a new workspace member that
+wraps `acmebot-acme` in a general-purpose ACME v2 issuance CLI (binary name
+`acmebot`, subcommand `acmebot issue ...`). It works against any ACME directory URL
+(Let's Encrypt prod/staging, Pebble, etc.) and automates the dns-01 challenge via
+operator-supplied `--dns-txt-set-command`/`--dns-txt-clear-command` shell hooks
+(falling back to a certbot-style manual prompt if omitted) — this sidesteps the
+still-unimplemented DNS provider integrations listed above while remaining useful
+today.
+
+The `Dockerfile` is a multi-stage build: a `rust:1-slim-bookworm` builder stage
+(with a Cargo-registry cache mount and a dummy-`main.rs`/`lib.rs` warm-up layer for
+dependency caching) cross-compiles the release binary for the requested
+`TARGETPLATFORM`, and a minimal `debian:bookworm-slim` runtime stage runs it as a
+non-root user. `.dockerignore` now excludes everything except `rust/` (the .NET
+build no longer needs the context). CI (`.github/workflows/ci.yml`,
+`container-build` job) validates the image builds for both `linux/amd64` and
+`linux/arm64` via `docker buildx build --platform ...` (QEMU + Buildx actions); it
+does not push anywhere yet — no registry/publish step has been requested.
+
 

@@ -1,26 +1,6 @@
-bin/
-obj/
-**/bin/
-**/obj/
-**/.vs/
-**/.vscode/
-**/*.user
-.git/
-.github/
-.gitignore
-.gitattributes
-.editorconfig
-.env
-.agents/
-docs/
-tests/
-samples/
-README.md
-CONTRIBUTING.md
-CODE_OF_CONDUCT.md
-SECURITY.md
-SUPPORT.md
-LICENSE
-deploy/k8s/
-Dockerfile
-.dockerignore
+# Only the Rust workspace is needed to build the acmebot container image.
+# Everything else (legacy C# app, docs, tests, tooling) is excluded from the
+# build context to keep builds fast and avoid leaking unrelated files.
+*
+!rust/
+rust/target/
