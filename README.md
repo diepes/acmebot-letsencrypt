@@ -8,16 +8,16 @@
   (App Service / Container Apps / Application Gateway / Front Door / Web PubSub / Event Grid / others)
 </p>
 <p align="center">
-  <a href="https://github.com/polymind-inc/acmebot/actions/workflows/build.yml" rel="nofollow"><img src="https://github.com/polymind-inc/acmebot/workflows/Build/badge.svg" alt="Build" style="max-width: 100%;"></a>
-  <a href="https://github.com/polymind-inc/acmebot/releases/latest" rel="nofollow"><img src="https://badgen.net/github/release/polymind-inc/acmebot" alt="Release" style="max-width: 100%;"></a>
-  <a href="https://github.com/polymind-inc/acmebot/stargazers" rel="nofollow"><img src="https://badgen.net/github/stars/polymind-inc/acmebot" alt="Stargazers" style="max-width: 100%;"></a>
-  <a href="https://github.com/polymind-inc/acmebot/network/members" rel="nofollow"><img src="https://badgen.net/github/forks/polymind-inc/acmebot" alt="Forks" style="max-width: 100%;"></a>
-  <a href="https://github.com/polymind-inc/acmebot/blob/master/LICENSE"><img src="https://badgen.net/github/license/polymind-inc/acmebot" alt="License" style="max-width: 100%;"></a>
+  <a href="https://github.com/diepes/acmebot-letsencrypt/actions/workflows/ci.yml" rel="nofollow"><img src="https://github.com/diepes/acmebot-letsencrypt/workflows/CI/badge.svg" alt="CI" style="max-width: 100%;"></a>
+  <a href="https://github.com/diepes/acmebot-letsencrypt/releases/latest" rel="nofollow"><img src="https://badgen.net/github/release/diepes/acmebot-letsencrypt" alt="Release" style="max-width: 100%;"></a>
+  <a href="https://github.com/diepes/acmebot-letsencrypt/stargazers" rel="nofollow"><img src="https://badgen.net/github/stars/diepes/acmebot-letsencrypt" alt="Stargazers" style="max-width: 100%;"></a>
+  <a href="https://github.com/diepes/acmebot-letsencrypt/network/members" rel="nofollow"><img src="https://badgen.net/github/forks/diepes/acmebot-letsencrypt" alt="Forks" style="max-width: 100%;"></a>
+  <a href="https://github.com/diepes/acmebot-letsencrypt/blob/master/LICENSE"><img src="https://badgen.net/github/license/diepes/acmebot-letsencrypt" alt="License" style="max-width: 100%;"></a>
   <a href="https://registry.terraform.io/modules/polymind-inc/acmebot/azurerm/latest" rel="nofollow"><img src="https://badgen.net/badge/terraform/registry/5c4ee5" alt="Terraform" style="max-width: 100%;"></a>
   <br>
-  <a href="https://github.com/polymind-inc/acmebot/commits/master" rel="nofollow"><img src="https://badgen.net/github/last-commit/polymind-inc/acmebot" alt="Last commit" style="max-width: 100%;"></a>
+  <a href="https://github.com/diepes/acmebot-letsencrypt/commits/master" rel="nofollow"><img src="https://badgen.net/github/last-commit/diepes/acmebot-letsencrypt" alt="Last commit" style="max-width: 100%;"></a>
   <a href="https://acmebot.dev/guide/" rel="nofollow"><img src="https://badgen.net/badge/documentation/available/ff7733" alt="Documentation" style="max-width: 100%;"></a>
-  <a href="https://github.com/polymind-inc/acmebot/discussions" rel="nofollow"><img src="https://badgen.net/badge/discussions/welcome/ff7733" alt="Discussions" style="max-width: 100%;"></a>
+  <a href="https://github.com/diepes/acmebot-letsencrypt/discussions" rel="nofollow"><img src="https://badgen.net/badge/discussions/welcome/ff7733" alt="Discussions" style="max-width: 100%;"></a>
 </p>
 
 ## Motivation
