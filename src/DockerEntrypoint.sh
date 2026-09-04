@@ -25,7 +25,7 @@ set -euo pipefail
 : "${AZURE_KEYVAULT_NAME:?AZURE_KEYVAULT_NAME env var is required}"
 AZURE_KEYVAULT_CERT_NAME="${AZURE_KEYVAULT_CERT_NAME:-${DOMAIN//./-}}"
 
-ACME_SH="${ACME_HOME:-/home/app/.acme.sh}/acme.sh"
+ACME_SH="${ACME_HOME:-/acme.cert.store}/acme.sh"
 CERT_DIR="/certs/${DOMAIN}"
 mkdir -p "${CERT_DIR}"
 

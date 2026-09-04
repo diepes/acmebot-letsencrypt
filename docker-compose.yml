@@ -1,0 +1,36 @@
+# Local test harness for the acmebot container (see CONTEXT.md).
+#
+# Usage:
+#   cp .env.acmebot.example .env.acmebot   # fill in DOMAIN / DNS_PROVIDER / credentials
+#   docker compose build
+#   docker compose run --rm acmebot
+#
+# Required/optional vars are validated by DockerEntrypoint.sh itself
+# (DOMAIN, DNS_PROVIDER, AZURE_KEYVAULT_NAME, plus DNS provider credentials
+# such as AZUREDNS_* or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY) — see
+# .env.acmebot.example for the full list.
+#
+# env_file is .env.acmebot (not .env): the repo root's .env already holds an
+# unrelated GH_TOKEN for other tooling, so it's kept separate here.
+#
+# The acme-cert-store volume persists the ACME account key + per-domain
+# renewal state across runs (mounted at /acme.cert.store, see Dockerfile).
+# Losing it means re-registering a new ACME account and, if using DNS
+# persist mode, re-publishing a new _validation-persist TXT record.
+#
+# `./out/certs` is a bind mount (not a named volume) so issued certs are
+# easy to inspect locally without `docker compose exec`/`cp`.
+services:
+  acmebot:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    image: acmebot:local
+    env_file:
+      - .env.acmebot
+    volumes:
+      - acme-cert-store:/acme.cert.store
+      - ./out/certs:/certs
+
+volumes:
+  acme-cert-store:

@@ -28,8 +28,17 @@ RUN apt-get update \
 # privileges via `USER app` at the very end, after ownership is fixed up.
 RUN groupadd -r app && useradd -r -m -d /home/app -g app app
 
-# Installs to /home/app/.acme.sh; --nocron avoids scheduling a renewal
-# cronjob inside the image (renewals are driven by re-running the container).
+# Installs to /acme.cert.store; --nocron avoids scheduling a renewal cronjob
+# inside the image (renewals are driven by re-running the container).
+#
+# ACME_HOME is a dedicated top-level path rather than /home/app/.acme.sh so
+# that the one directory that needs to persist across container runs (the
+# ACME account key + per-domain renewal state) has a stable, well-known mount
+# point independent of the runtime user's home directory. This matters
+# because Kubernetes/OpenShift-style security contexts often run the
+# container as an arbitrary non-root UID with no usable $HOME, and because a
+# dedicated path makes the volume's purpose unambiguous wherever it's mounted
+# (docker-compose bind mount or k8s PersistentVolumeClaim).
 #
 # Pinned to a specific commit (tag 3.1.4) instead of piping get.acme.sh/master
 # into `sh`, for two reasons:
@@ -42,7 +51,15 @@ RUN groupadd -r app && useradd -r -m -d /home/app -g app app
 ARG ACME_SH_COMMIT=3661fd86b6304115e42f43910e6dd452ab9866d6
 ARG ACME_SH_SHA256=9af3ad3d775a5782246df4cdd4b4e7b9b3179deb63c509b10e3ba0433093a884
 ARG ACME_EMAIL=acme@example.com
-ENV ACME_HOME=/home/app/.acme.sh
+ENV ACME_HOME=/acme.cert.store
+# Create the persistent-state directory as root first, then hand ownership
+# to `app` explicitly, so the image layer itself has the correct owner
+# before any volume is ever mounted here. This matters for named Docker
+# volumes / fresh PersistentVolumeClaims: on first mount, Docker/Kubernetes
+# initializes empty volumes by copying the image's existing directory
+# (including ownership) at that path, so getting this right at build time
+# is what makes the `app` user able to read/write the mounted volume later.
+RUN mkdir -p "${ACME_HOME}" && chown app:app "${ACME_HOME}"
 
 RUN curl -fsSL "https://github.com/acmesh-official/acme.sh/archive/${ACME_SH_COMMIT}.tar.gz" -o /tmp/acme.sh.tar.gz \
     && echo "${ACME_SH_SHA256}  /tmp/acme.sh.tar.gz" | sha256sum -c - \
