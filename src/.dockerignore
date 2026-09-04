@@ -1,0 +1,6 @@
+# Only the docker entrypoint script is needed to build the acmebot container
+# image (acme.sh + az cli are installed at build time, not copied from the
+# repo). Everything else (docs, tests, tooling) is excluded from the build
+# context to keep builds fast and avoid leaking unrelated files.
+*
+!DockerEntrypoint.sh
