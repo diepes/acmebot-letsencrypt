@@ -1,11 +1,10 @@
 <h1 align="center">
-  Acmebot for Microsoft Azure KV
+  Cert issuer for Microsoft Azure KV usning letsencrypt
 </h1>
 <p align="center">
   ACME SSL/TLS certificate automation for Microsoft Azure, built around DNS-01 validation and Azure Key Vault
-  Forked and ported to rust from - https://github.com/polymind-inc/acmebot
   <br>
-  (App Service / Container Apps / Application Gateway / Front Door / Web PubSub / Event Grid / others)
+  (Contaner)
 </p>
 <p align="center">
   <a href="https://github.com/diepes/acmebot-letsencrypt/actions/workflows/ci.yml" rel="nofollow"><img src="https://github.com/diepes/acmebot-letsencrypt/workflows/CI/badge.svg" alt="CI" style="max-width: 100%;"></a>
@@ -40,10 +39,7 @@ Acmebot is designed for teams that need to:
 - Independent renewal state and next-check timing per certificate, built for long-running certificate fleets
 - Support for ACME v2 compliant Certification Authorities
   - [Let's Encrypt](https://letsencrypt.org/)
-  - [GlobalSign](https://www.globalsign.com/) (Requires EAB Credentials)
-  - [Google Trust Services](https://pki.goog/) (Requires EAB Credentials)
-  - [SSL.com](https://www.ssl.com/how-to/order-free-90-day-ssl-tls-certificates-with-acme/) (Requires EAB Credentials)
-  - [ZeroSSL](https://zerossl.com/features/acme/) (Requires EAB Credentials)
+
 - Certificates can be used with many Azure services
   - App Service (Web Apps / Functions / Containers)
   - Container Apps (Include custom DNS suffix)

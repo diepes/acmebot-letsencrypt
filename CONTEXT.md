@@ -174,22 +174,40 @@ actually removed (see the C# removal plan below).
 The project is now container/Kubernetes-only (all Bicep/ARM deployment code and
 docs have been removed — see `deploy/k8s/`). The `Dockerfile` no longer builds the
 .NET Azure Functions app; it builds `rust/acmebot-cli`, a new workspace member that
-wraps `acmebot-acme` in a general-purpose ACME v2 issuance CLI (binary name
-`acmebot`, subcommand `acmebot issue ...`). It works against any ACME directory URL
-(Let's Encrypt prod/staging, Pebble, etc.) and automates the dns-01 challenge via
-operator-supplied `--dns-txt-set-command`/`--dns-txt-clear-command` shell hooks
-(falling back to a certbot-style manual prompt if omitted) — this sidesteps the
-still-unimplemented DNS provider integrations listed above while remaining useful
-today.
+wraps `acmebot-acme` in a general-purpose ACME v2 CLI (binary name `acmebot`) with
+two subcommands:
 
-The `Dockerfile` is a multi-stage build: a `rust:1-slim-bookworm` builder stage
-(with a Cargo-registry cache mount and a dummy-`main.rs`/`lib.rs` warm-up layer for
-dependency caching) cross-compiles the release binary for the requested
-`TARGETPLATFORM`, and a minimal `debian:bookworm-slim` runtime stage runs it as a
-non-root user. `.dockerignore` now excludes everything except `rust/` (the .NET
-build no longer needs the context). CI (`.github/workflows/ci.yml`,
-`container-build` job) validates the image builds for both `linux/amd64` and
-`linux/arm64` via `docker buildx build --platform ...` (QEMU + Buildx actions); it
-does not push anywhere yet — no registry/publish step has been requested.
+- `acmebot issue ...` — one-shot certificate issuance against any ACME directory
+  URL (Let's Encrypt prod/staging, Pebble, etc.), automating the dns-01 challenge
+  via operator-supplied `--dns-txt-set-command`/`--dns-txt-clear-command` shell
+  hooks (falling back to a certbot-style manual prompt if omitted) — this
+  sidesteps the still-unimplemented DNS provider integrations listed above while
+  remaining useful today.
+- `acmebot serve` (the container's default `CMD`) — hosts the pre-built Vue
+  dashboard (`src/Acmebot.App/ClientApp`, built via `npm run build`) as a static
+  webpage on `:8080` using Axum + Tower-HTTP (`ServeDir` with an `index.html`
+  fallback, plus a `/healthz` route and graceful shutdown on Ctrl+C/SIGTERM). It
+  only serves the dashboard's static assets — the dashboard's `/api/*` calls
+  (`GET /api/certificates`, `GET /api/dns-zones`, etc., see
+  `src/Acmebot.App/ClientApp/src/api/acmebotApi.ts`) 404 until an HTTP API
+  backend is ported to Rust (still on the backlog above).
+
+The `Dockerfile` is a multi-stage build:
+- `dashboard-build` (`node:24-slim`, runs natively on `BUILDPLATFORM` since the
+  output is platform-independent static assets): `npm ci` + `npm run build` for
+  `src/Acmebot.App/ClientApp`, producing `wwwroot` static files.
+- `build` (`rust:1-slim-bookworm`): Cargo-registry cache mount + a dummy
+  `main.rs`/`lib.rs` warm-up layer for dependency caching, then cross-compiles
+  the release `acmebot` binary for the requested `TARGETPLATFORM`.
+- Final stage (`debian:bookworm-slim`, non-root user): copies in both the
+  `acmebot` binary and the built dashboard assets (to
+  `/usr/local/share/acmebot/dashboard`, `serve`'s default `--dashboard-dir`).
+
+`.dockerignore` now excludes everything except `rust/` and
+`src/Acmebot.App/ClientApp/` (the rest of the .NET app, tests, and docs are not
+needed to build the image). CI (`.github/workflows/ci.yml`, `container-build`
+job) validates the image builds for both `linux/amd64` and `linux/arm64` via
+`docker buildx build --platform ...` (QEMU + Buildx actions); it does not push
+anywhere yet — no registry/publish step has been requested.
 
 

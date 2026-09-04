@@ -1,12 +1,29 @@
 # syntax=docker/dockerfile:1
-# Builds the `acmebot` Rust CLI (rust/acmebot-cli) into a minimal runtime image,
-# suitable for running certificate issuance jobs (e.g. as a Kubernetes CronJob/Job).
+# Builds the `acmebot` Rust CLI (rust/acmebot-cli) plus the Vue dashboard
+# (src/Acmebot.App/ClientApp) into a single minimal runtime image. The `acmebot serve`
+# subcommand hosts the built dashboard as a static webpage on :8080 via Axum +
+# Tower-HTTP; the same binary/image also runs one-shot `acmebot issue` certificate
+# jobs (e.g. as a Kubernetes CronJob/Job) by overriding the container command.
 #
 # Multi-arch: built for linux/amd64 and linux/arm64 via `docker buildx build --platform ...`
 # (see .github/workflows/ci.yml). Docker/buildx automatically selects the matching
 # BUILDPLATFORM builder and TARGETPLATFORM output per the --platform list.
 
 ARG RUST_VERSION=1
+ARG NODE_VERSION=24
+
+# --- Dashboard (Vue 3 + Vite) static assets ---------------------------------
+# Runs on BUILDPLATFORM (native) regardless of TARGETPLATFORM: it only produces
+# platform-independent static HTML/JS/CSS output, so no cross-compilation needed.
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-slim AS dashboard-build
+WORKDIR /src/dashboard
+
+COPY src/Acmebot.App/ClientApp/package.json src/Acmebot.App/ClientApp/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+
+COPY src/Acmebot.App/ClientApp/ ./
+# vite.config.ts writes to outDir "../wwwroot", i.e. /src/wwwroot relative to WORKDIR.
+RUN npm run build
 
 FROM --platform=$BUILDPLATFORM rust:${RUST_VERSION}-slim-bookworm AS build
 WORKDIR /src
@@ -63,7 +80,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && useradd --system --no-create-home --shell /usr/sbin/nologin acmebot
 
 COPY --from=build /out/acmebot /usr/local/bin/acmebot
+COPY --from=dashboard-build /src/wwwroot /usr/local/share/acmebot/dashboard
 
 USER acmebot
+EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/acmebot"]
-CMD ["--help"]
+CMD ["serve"]
