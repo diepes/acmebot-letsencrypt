@@ -5,6 +5,9 @@
 #   docker compose build
 #   docker compose run --rm acmebot
 #
+# To just get an interactive shell inside the built image (no cert issuance):
+#   docker compose run --rm debug
+#
 # Required/optional vars are validated by DockerEntrypoint.sh itself
 # (DOMAIN, DNS_PROVIDER, AZURE_KEYVAULT_NAME, plus DNS provider credentials
 # such as AZUREDNS_* or AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY) — see
@@ -13,6 +16,13 @@
 # env_file is .env.acmebot (not .env): the repo root's .env already holds an
 # unrelated GH_TOKEN for other tooling, so it's kept separate here.
 #
+# env_file is marked `required: false` on both services: DockerEntrypoint.sh
+# already validates required vars itself and fails with a clear error, and
+# this lets `docker compose run --rm debug` work even before .env.acmebot
+# exists (compose resolves every service's config up front, so a missing
+# *required* env_file on any service — even one you're not running — would
+# otherwise abort the whole command).
+#
 # The acme-cert-store volume persists the ACME account key + per-domain
 # renewal state across runs (mounted at /acme.cert.store, see Dockerfile).
 # Losing it means re-registering a new ACME account and, if using DNS
@@ -20,6 +30,13 @@
 #
 # `./out/certs` is a bind mount (not a named volume) so issued certs are
 # easy to inspect locally without `docker compose exec`/`cp`.
+#
+# `debug`: same image/volumes as `acmebot`, but overrides the entrypoint
+# with an interactive bash shell for poking around inside the container
+# (e.g. checking acme.sh/az versions, inspecting /acme.cert.store).
+# env_file is optional here (`required: false`) since you may just want a
+# shell without having filled in .env.acmebot yet.
+#   docker compose run --rm debug
 services:
   acmebot:
     build:
@@ -27,7 +44,23 @@ services:
       dockerfile: Dockerfile
     image: acmebot:local
     env_file:
-      - .env.acmebot
+      - path: .env.acmebot
+        required: false
+    volumes:
+      - acme-cert-store:/acme.cert.store
+      - ./out/certs:/certs
+
+  debug:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    image: acmebot:local
+    entrypoint: ["/bin/bash"]
+    tty: true
+    stdin_open: true
+    env_file:
+      - path: .env.acmebot
+        required: false
     volumes:
       - acme-cert-store:/acme.cert.store
       - ./out/certs:/certs

@@ -1,58 +1,45 @@
-<h1 align="center">
-  Cert issuer for Microsoft Azure KV usning letsencrypt
-</h1>
-<p align="center">
-  ACME SSL/TLS certificate automation for Microsoft Azure, built around DNS-01 validation and Azure Key Vault
-  <br>
-  (Contaner)
-</p>
-<p align="center">
-  <a href="https://github.com/diepes/acmebot-letsencrypt/actions/workflows/ci.yml" rel="nofollow"><img src="https://github.com/diepes/acmebot-letsencrypt/workflows/CI/badge.svg" alt="CI" style="max-width: 100%;"></a>
-  <a href="https://github.com/diepes/acmebot-letsencrypt/releases/latest" rel="nofollow"><img src="https://badgen.net/github/release/diepes/acmebot-letsencrypt" alt="Release" style="max-width: 100%;"></a>
-  <a href="https://github.com/diepes/acmebot-letsencrypt/stargazers" rel="nofollow"><img src="https://badgen.net/github/stars/diepes/acmebot-letsencrypt" alt="Stargazers" style="max-width: 100%;"></a>
-  <a href="https://github.com/diepes/acmebot-letsencrypt/network/members" rel="nofollow"><img src="https://badgen.net/github/forks/diepes/acmebot-letsencrypt" alt="Forks" style="max-width: 100%;"></a>
-  <a href="https://github.com/diepes/acmebot-letsencrypt/blob/master/LICENSE"><img src="https://badgen.net/github/license/diepes/acmebot-letsencrypt" alt="License" style="max-width: 100%;"></a>
-  <a href="https://registry.terraform.io/modules/polymind-inc/acmebot/azurerm/latest" rel="nofollow"><img src="https://badgen.net/badge/terraform/registry/5c4ee5" alt="Terraform" style="max-width: 100%;"></a>
-  <br>
-  <a href="https://github.com/diepes/acmebot-letsencrypt/commits/master" rel="nofollow"><img src="https://badgen.net/github/last-commit/diepes/acmebot-letsencrypt" alt="Last commit" style="max-width: 100%;"></a>
-  <a href="https://acmebot.dev/guide/" rel="nofollow"><img src="https://badgen.net/badge/documentation/available/ff7733" alt="Documentation" style="max-width: 100%;"></a>
-  <a href="https://github.com/diepes/acmebot-letsencrypt/discussions" rel="nofollow"><img src="https://badgen.net/badge/discussions/welcome/ff7733" alt="Discussions" style="max-width: 100%;"></a>
-</p>
+# Cert issuer for Azure Key Vault using Let's Encrypt
 
-## Motivation
+A small container that issues/renews TLS certificates with [acme.sh](https://github.com/acmesh-official/acme.sh)
+and stores them in Azure Key Vault. Runs as a k8s CronJob.
 
-Acmebot helps Azure platform and operations teams automate ACME certificate issuance and renewal without building a dedicated certificate pipeline. It uses DNS-01 validation, stores private keys and issued certificates in Azure Key Vault, and exposes a dashboard and HTTP API for day-to-day operations.
+## How it works
 
-Acmebot is designed for teams that need to:
+Uses acme.sh's **DNS persist mode** (`--dns-persist`) so the recurring renewal job
+never needs DNS write credentials. See [CONTEXT.md](CONTEXT.md) for terms and
+rationale.
 
-- Store SSL/TLS certificates securely in Azure Key Vault
-- Centralize certificates for multiple Azure services and domains
-- Automate certificate fleets with per-certificate renewal state and predictable operational behavior
-- Monitor certificate operations through Application Insights and webhooks
-- Keep DNS provider credentials and Azure access scoped to the resources Acmebot manages
+### 1. Bootstrap (manual, once per domain)
 
-## Feature Support
+```sh
+acme.sh --home ./acme-home --server letsencrypt \
+  --make-dns-persist-value -d example.com --dns-persist-wildcard
+```
 
-- Issue certificates for zone apex names, wildcards, and SANs (multiple domains)
-- Dedicated dashboard for certificate management
-- ARI-aware renewal scheduling for each managed certificate, with CA-provided renewal windows, `Retry-After` timing, and an expiry-based fallback
-- Independent renewal state and next-check timing per certificate, built for long-running certificate fleets
-- Support for ACME v2 compliant Certification Authorities
-  - [Let's Encrypt](https://letsencrypt.org/)
+Add the printed `_validation-persist.example.com` TXT record at your DNS provider
+by hand — no DNS API credentials needed. Reuse the same `--home` directory across
+domains; only the TXT record is per-domain.
 
-- Certificates can be used with many Azure services
-  - App Service (Web Apps / Functions / Containers)
-  - Container Apps (Include custom DNS suffix)
-  - Front Door (Standard / Premium)
-  - Application Gateway v2
-  - API Management
-  - Web PubSub (Premium)
-  - Event Grid Namespaces
-  - SignalR Service (Premium)
-  - Virtual Machine
+### 2. Run the CronJob
 
-## Deployment
+Mount the `./acme-home` directory from step 1 (the ACME account key) at `ACME_HOME`,
+and set:
 
+- `DOMAIN` (+ optional `SAN_DOMAINS`) — domain(s) to issue for, wildcard or not
+- `AZURE_KEYVAULT_NAME` — Key Vault to store the certificate in
+
+Each run:
+
+```sh
+acme.sh --home "$ACME_HOME" --issue -d example.com --dns-persist
+```
+
+acme.sh only reissues when a certificate is due for renewal. **Phase 1** (current):
+the cert + key are written to a local folder, then imported into Azure Key Vault with
+`az keyvault certificate import` (Azure CLI, via the container's managed identity).
+
+Try it locally with `docker-compose.yml` — see `.env.acmebot.example` and
+`acme-app/DockerEntrypoint.sh`.
 
 ## Community
 

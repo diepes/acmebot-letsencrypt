@@ -50,7 +50,6 @@ RUN groupadd -r app && useradd -r -m -d /home/app -g app app
 # Bump ACME_SH_COMMIT (and the checksum) deliberately to pick up updates.
 ARG ACME_SH_COMMIT=3661fd86b6304115e42f43910e6dd452ab9866d6
 ARG ACME_SH_SHA256=9af3ad3d775a5782246df4cdd4b4e7b9b3179deb63c509b10e3ba0433093a884
-ARG ACME_EMAIL=acme@example.com
 ENV ACME_HOME=/acme.cert.store
 # Create the persistent-state directory as root first, then hand ownership
 # to `app` explicitly, so the image layer itself has the correct owner
@@ -66,9 +65,10 @@ RUN curl -fsSL "https://github.com/acmesh-official/acme.sh/archive/${ACME_SH_COM
     && mkdir -p /usr/src/acme.sh \
     && tar -xzf /tmp/acme.sh.tar.gz -C /usr/src/acme.sh --strip-components=1 \
     && rm /tmp/acme.sh.tar.gz \
-    && (cd /usr/src/acme.sh && ./acme.sh --install --home "${ACME_HOME}" --nocron --email "${ACME_EMAIL}") \
+    && (cd /usr/src/acme.sh && ./acme.sh --install --home "${ACME_HOME}" --nocron) \
     && rm -rf /usr/src/acme.sh \
-    && chown -R app:app "${ACME_HOME}"
+    && chown -R app:app "${ACME_HOME}" \
+    && ln -s "${ACME_HOME}/acme.sh" /home/app/acme.sh
 ENV PATH="${ACME_HOME}:${PATH}"
 
 # /certs is where the entrypoint writes issued certs before importing them
@@ -79,5 +79,7 @@ COPY DockerEntrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 USER app
+WORKDIR /home/app
+COPY acme-scripts/* /home/app/
 
 ENTRYPOINT ["/entrypoint.sh"]

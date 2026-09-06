@@ -4,3 +4,5 @@
 # context to keep builds fast and avoid leaking unrelated files.
 *
 !DockerEntrypoint.sh
+!acme-scripts/
+!acme-scripts/**

@@ -6,6 +6,7 @@
 #
 # Required env vars:
 #   DOMAIN                    Primary domain to issue a certificate for.
+#   ACME_EMAIL                Email address registered with the ACME server.
 #   DNS_PROVIDER               acme.sh dns hook to use: dns_azure | dns_aws
 #   AZURE_KEYVAULT_NAME         Target Key Vault name.
 #
@@ -21,6 +22,7 @@
 set -euo pipefail
 
 : "${DOMAIN:?DOMAIN env var is required}"
+: "${ACME_EMAIL:?ACME_EMAIL env var is required}"
 : "${DNS_PROVIDER:?DNS_PROVIDER env var is required (dns_azure or dns_aws)}"
 : "${AZURE_KEYVAULT_NAME:?AZURE_KEYVAULT_NAME env var is required}"
 AZURE_KEYVAULT_CERT_NAME="${AZURE_KEYVAULT_CERT_NAME:-${DOMAIN//./-}}"
@@ -36,6 +38,7 @@ done
 
 echo "==> Issuing certificate for ${DOMAIN} via ${DNS_PROVIDER}"
 "${ACME_SH}" --issue \
+  --email "${ACME_EMAIL}" \
   --dns "${DNS_PROVIDER}" \
   -d "${DOMAIN}" "${san_args[@]}" \
   --fullchain-file "${CERT_DIR}/fullchain.pem" \
