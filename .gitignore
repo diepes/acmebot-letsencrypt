@@ -20,3 +20,6 @@
 # Core dumps
 core
 core.*
+
+# VS Code settings
+.vscode/
