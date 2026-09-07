@@ -1,11 +1,11 @@
 # Local test harness for the acmebot container (see CONTEXT.md).
 #
 # Usage:
-#   cp .env.acmebot.example .env.acmebot   # fill in ACME_DOMAINS / ACME_EMAIL / AZURE_KEYVAULT_NAME
+#   cp .env.acmebot.example .env.acmebot   # fill in ACME_DOMAINS / ACME_EMAIL
 #   docker compose build
-#   docker compose run --rm bootstrap      # one-time: register account + print TXT record(s)
-#   # ... publish the printed TXT record(s) at your DNS provider, then:
-#   docker compose run --rm acmebot        # issue/renew + import into Key Vault
+#   docker compose run --rm bootstrap      # one-time: register account + print .env block
+#   # ... paste the printed block into .env.acmebot, publish the TXT record(s), then:
+#   docker compose run --rm acmebot        # issue/renew (+ import into Key Vault if AZ_KV_NAME is set)
 #
 # To just get an interactive shell inside the built image (no cert issuance):
 #   docker compose run --rm debug
@@ -13,9 +13,10 @@
 # The container's default ENTRYPOINT is acme.sh itself (see Dockerfile); the
 # `bootstrap` and `acmebot` services below select the two purpose-built
 # alternate entrypoints, acme-bootstrap.sh and acme-cron-update.sh, which
-# validate their own required env vars (ACME_DOMAINS, ACME_EMAIL,
-# AZURE_KEYVAULT_NAME) and fail with a clear error if missing — see
-# .env.acmebot.example for the full list.
+# validate their own required env vars (ACME_DOMAINS, ACME_EMAIL) and fail
+# with a clear error if missing — see .env.acmebot.example for the full
+# list, including the optional AZ_KV_NAME/AZ_KV_CERT_NAME (Key Vault import
+# is skipped, Phase 1 local-folder-only, if AZ_KV_NAME is empty/unset).
 #
 # env_file is .env.acmebot (not .env): the repo root's .env already holds an
 # unrelated GH_TOKEN for other tooling, so it's kept separate here.
@@ -26,17 +27,18 @@
 # *required* env_file on any service — even one you're not running — would
 # otherwise abort the whole command).
 #
-# The acme-cert-store volume persists the ACME Account key + per-domain
-# renewal state across runs (mounted at /acme.cert.store, see Dockerfile).
-# Losing it means re-registering a new ACME account and re-publishing new
-# Persist TXT records for every domain.
+# No volume backs ACME_HOME here (deliberately, matching README.md's plain
+# `docker run` examples): `bootstrap` prints the Account key as
+# ACME_ID_SECRET_KEY in its `.env` block, and `acmebot` writes that env var to
+# ACME_HOME/account.key at startup, so state only ever lives in
+# .env.acmebot — nothing container-side needs to persist between runs.
 #
 # `./out/certs` is a bind mount (not a named volume) so issued certs are
 # easy to inspect locally without `docker compose exec`/`cp`.
 #
-# `debug`: same image/volumes as `acmebot`, but overrides the entrypoint
-# with an interactive bash shell for poking around inside the container
-# (e.g. checking acme.sh/az versions, inspecting /acme.cert.store).
+# `debug`: same image/env as `acmebot`, but overrides the entrypoint with an
+# interactive bash shell for poking around inside the container (e.g.
+# checking acme.sh/az versions, inspecting /acme.cert.store).
 services:
   bootstrap:
     build:
@@ -47,8 +49,6 @@ services:
     env_file:
       - path: .env.acmebot
         required: false
-    volumes:
-      - acme-cert-store:/acme.cert.store
 
   acmebot:
     build:
@@ -60,7 +60,6 @@ services:
       - path: .env.acmebot
         required: false
     volumes:
-      - acme-cert-store:/acme.cert.store
       - ./out/certs:/certs
 
   debug:
@@ -75,8 +74,4 @@ services:
       - path: .env.acmebot
         required: false
     volumes:
-      - acme-cert-store:/acme.cert.store
       - ./out/certs:/certs
-
-volumes:
-  acme-cert-store:

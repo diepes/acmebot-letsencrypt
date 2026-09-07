@@ -11,24 +11,46 @@ entrypoint, that registers the ACME account (if it doesn't exist yet) and prints
 Persist TXT record(s) to publish. Not automated, not run by the CronJob.
 
 **Account key**:
-The ACME account's private key, generated during the Bootstrap step and stored under
-`ACME_HOME`. Identifies the registered account to the CA and is shared across every
-domain issued under that `ACME_HOME`. This is what the CronJob is given; it never
-touches DNS credentials. `ACME_HOME` (acme.sh's `--config-home`) holds only this
-data — the acme.sh script itself installs elsewhere in the image — so it's always
-safe to mount an empty volume/PVC there.
+The ACME account's private key, generated during the Bootstrap step. Identifies the
+registered account to the CA and is shared across every domain issued under that
+account. Both entrypoint scripts read/write it at a fixed path,
+`ACME_HOME/account.key` (exported to acme.sh via the `ACCOUNT_KEY_PATH` env var — there
+is no `--accountkeypath` CLI flag), rather than relying on acme.sh's internal,
+CA-specific `ca/<host>/directory/account.key` layout.
+Exposed as the `ACME_ID_SECRET_KEY` env var — printed by `acme-bootstrap.sh` in its
+final `.env`-ready block as a single line (the PEM's real newlines escaped to literal
+`\n`, since `docker run --env-file`/compose's `env_file:` have no multiline value
+support — see README.md), unescaped back to a real PEM by `acme-cron-update.sh`
+(written to `ACME_HOME/account.key` at startup) so the CronJob can run from just an
+env file, with no volume/PVC shared with the Bootstrap step. `ACME_HOME` (acme.sh's
+`--config-home`) holds only this data — the acme.sh script itself installs elsewhere
+in the image — so
+it's always safe to mount an empty (or no) volume there.
 _Avoid_: "the key" (ambiguous with Certificate key)
 
 **Certificate key**:
 The private key generated fresh for a domain's certificate each time `acme.sh --issue`
-runs. Written to a local folder, then imported into Azure Key Vault. Unrelated to the
-Account key.
+runs. Written to a local folder, then — if `AZ_KV_NAME` is set — also imported into
+Azure Key Vault. Unrelated to the Account key.
 _Avoid_: "the key"
 
 **Persist TXT record**:
 The `_validation-persist.<domain>` DNS TXT record printed by the Bootstrap step and
 published once, manually, at the domain's DNS provider. Reused for every future
-issuance/renewal; the CronJob never writes to DNS.
+issuance/renewal; the CronJob never writes to DNS. Exposed as the
+`ACME_DNS_KEY`/`ACME_DNS_VALUE` env var pair in `acme-bootstrap.sh`'s printed
+`.env` block (one shared record per apex domain — a domain plus its wildcard, e.g.
+`example.com` + `*.example.com`, need only one; multiple distinct apex domains in one
+`ACME_DOMAINS` produce numbered `_1`/`_2`... pairs instead). `acme.sh`'s
+`--make-dns-persist-value` only ever computes a record for the *first* `-d` given to
+it — any further `-d` flags are silently ignored by that subcommand — so
+`acme-bootstrap.sh` calls it once per unique apex domain rather than once with every
+`-d` flag. `acme.sh` also has a known bug
+([acmesh-official/acme.sh#7168](https://github.com/acmesh-official/acme.sh/issues/7168))
+where passing a wildcard domain (e.g. `*.example.com`) directly as `-d` prints the
+record name with a literal `*.` label (`_validation-persist.*.example.com`); calling
+it with the bare apex only (as `acme-bootstrap.sh` does) avoids ever triggering this,
+though the parsing still strips it defensively.
 
 **ACME_DOMAINS**:
 A comma separated env var, shared by both entrypoint scripts, listing every domain in
@@ -41,9 +63,11 @@ space-separated SAN list separate from the primary domain)
 
 **CronJob**:
 The unattended, recurring container invocation (the `acme-cron-update.sh` entrypoint)
-that renews certificates: reads `ACME_DOMAINS` and the mounted Account key, runs `acme.sh
---issue --dns-persist`, then (Phase 1) writes the certificate + Certificate key to a
-local folder and imports them into Azure Key Vault via the Azure CLI. Has no DNS write
+that renews certificates: reads `ACME_DOMAINS` and the Account key (from
+`ACME_ID_SECRET_KEY` or a pre-populated `ACME_HOME`), runs `acme.sh --issue
+--dns-persist`, then (Phase 1) writes the certificate + Certificate key to a local
+folder always, and imports them into Azure Key Vault via the Azure CLI only if
+`AZ_KV_NAME` is set (empty/unset means local-folder-only). Has no DNS write
 access.
 _Avoid_: operator (the operator is the human running the Bootstrap step)
 
@@ -66,11 +90,15 @@ alternate entrypoints selected at run time (`--entrypoint` in `docker run`, `com
 in k8s) — see `acme-app/acme-scripts/`.
 
 1. **Bootstrap** (manual, `acme-bootstrap.sh`): `acme.sh --make-dns-persist-value -d
-   <domain> [-d <domain>...] [--dns-persist-wildcard]` → operator publishes the
-   printed TXT record(s) by hand.
+   <apex-domain> [--dns-persist-wildcard]`, once per unique apex domain in
+   `ACME_DOMAINS` → prints a copy-pasteable `.env` block (`ACME_DOMAINS`/
+   `ACME_EMAIL`/`ACME_SERVER`/`ACME_DNS_KEY`/`ACME_DNS_VALUE`/
+   `ACME_ID_SECRET_KEY`, plus empty `AZ_KV_NAME`/`AZ_KV_CERT_NAME`
+   placeholders); operator publishes the TXT record(s) by hand.
 2. **CronJob** (automated, `acme-cron-update.sh`): `acme.sh --issue -d <domain> [-d
-   <domain>...] --dns-persist` → **Phase 1**: write cert + key locally, then `az
-   keyvault certificate import` into Azure Key Vault.
+   <domain>...] --dns-persist` → **Phase 1**: write cert + key locally always, then
+   (only if `AZ_KV_NAME` is set) `az keyvault certificate import` into Azure Key
+   Vault.
 
 ## Legacy: DNS API mode
 
