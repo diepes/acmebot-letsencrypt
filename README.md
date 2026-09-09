@@ -101,7 +101,8 @@ output) is bind-mounted:
 docker build -t acmebot:local acme-app
 docker run --rm \
   --entrypoint /home/app/acme-cron-update.sh \
-  --env-file .env.acmebot \
+  --env-file .env.acmebot.default.shared \
+  --env-file .env.acmebot.cert.config \
   -v "$(pwd)/out/certs:/certs" \
   acmebot:local
   # env +AZ_KV_NAME, _CERT_NAME, ACME_DNS_MODE
@@ -177,7 +178,13 @@ Try both steps locally with `docker-compose.yml` (`docker compose run --rm boots
   subscription-wide zone list + suffix match, and fails fast with a clear
   `ERROR: no accessible Azure DNS zone found for: ...` (or a zone-list
   permission error) instead of letting acme.sh burn a Let's Encrypt attempt only to
-  fail opaquely later. The two indistinguishable causes behind either error are
+  fail opaquely later. This DNS zone access pre-check and the Key Vault renewal
+  pre-check (see `RENEWAL_THRESHOLD_DAYS`/`FORCE_RENEW` above) always **both** run
+  to completion on every invocation, regardless of what the other one finds — so a
+  broken DNS setup can't stay hidden on a run where Key Vault said the current cert
+  is still valid, and vice versa. If both fail, both errors are printed together
+  under one `ERROR: N pre-flight check(s) failed for <domain>:` message rather than
+  only reporting whichever failed first. The two indistinguishable causes behind either error are
   (a) that subscription ID isn't the one hosting the domain's actual Azure DNS
   zone (e.g. it's reusing the Key Vault's subscription, not the DNS one), or (b) the
   service principal/managed identity lacks read/list rights on that zone (or the whole
@@ -215,6 +222,60 @@ Try both steps locally with `docker-compose.yml` (`docker compose run --rm boots
   and only switch to `ACME_SERVER=letsencrypt` once the whole flow is confirmed
   working end-to-end. Staging certs aren't publicly trusted, but Key Vault import
   and metadata (Subject/Issuer/SAN) work identically for verifying the pipeline.
+  **Also note**: `acme-cron-update.sh` now checks Key Vault for an existing,
+  still-valid certificate (see `RENEWAL_THRESHOLD_DAYS`/`FORCE_RENEW` in
+  `.env.acmebot.example`) before ever calling acme.sh, specifically to prevent
+  routine re-runs (e.g. a k8s CronJob) from burning this rate limit — but manual,
+  repeated `docker compose run` iterations while debugging will still bypass that
+  check every time the cert genuinely doesn't exist yet or `FORCE_RENEW=true` is set.
+
+- **The Key Vault renewal check always says "No existing certificate found",
+  even right after a successful import**: this means the identity has rights
+  to *import*/*create* certificates but not to *read* them back — the two are
+  separate Key Vault permissions and it's easy to grant one without the other.
+  Without a fix, this used to fail silently: the script treated "permission
+  denied" identically to "certificate genuinely doesn't exist yet" and just
+  re-issued unconditionally on every single run, defeating the whole point of
+  the check (and burning the rate limit above, one run at a time). It's now
+  fixed to tell the two apart and fail loudly instead — a permission problem
+  surfaces as `ERROR: ... Key Vault pre-check: failed to query Key Vault ...`
+  rather than silently proceeding. If you see that error, grant the identity
+  the Key Vault **`Certificates - Get`** right (Access Policy) or the
+  **`Key Vault Certificates Officer`** RBAC role (which includes get) on
+  `AZ_KV_NAME` — `import`/`create`-only rights are not enough.
+
+- **Does the renewal check verify the Key Vault certificate actually covers
+  the right domains, or only its expiry?** Both. `AZ_KV_CERT_NAME` is just a
+  fixed label (often overridden to something static, unrelated to the
+  current `ACME_DOMAINS` — see the "Getting Started" example vault name) —
+  nothing stops the domain list changing later while that name stays the
+  same. So on top of the expiry check, `acme-cron-update.sh` also compares
+  the existing Key Vault certificate's SANs against `ACME_DOMAINS`; a
+  mismatch always forces re-issuance regardless of how far away the expiry
+  is (`==> WARNING: Key Vault certificate '...' covers a different domain
+  set than requested ...`). This is best-effort: if the SAN lookup itself
+  fails or returns nothing (e.g. an older cert with an unexpected policy
+  shape), it only warns and falls back to the expiry-only decision rather
+  than blocking the run.
+
+- **Migrating an existing, already-in-production Key Vault certificate
+  (issued by some other CA/process) over to this script**: the SAN check
+  above is deliberately permissive by default — a mismatch or an
+  unverifiable SAN list only warns and still proceeds to issue/overwrite,
+  and a brand new certificate name is treated as the normal case. That's
+  the wrong tradeoff for a one-off cutover, where a typo'd
+  `AZ_KV_NAME`/`AZ_KV_CERT_NAME` or wrong `ACME_DOMAINS` could otherwise
+  silently overwrite an unrelated, currently trusted production certificate
+  (or create a wrongly-named one) without ever pausing. Set
+  `SAFETY_ONLY_UPD_IF_EXISTING_SAN_MATCH=true` to make that scenario a hard
+  pre-flight failure instead: issuance/import is refused unless an existing
+  certificate is found under `AZ_KV_CERT_NAME` **and** its SANs are
+  confirmed to already match `ACME_DOMAINS`. Recommended usage: set it just
+  for the first cutover run (verifying the identity/name/domain wiring is
+  all correct against the real existing certificate), then unset it for
+  normal ongoing renewals. Applies even when `FORCE_RENEW=true` is also
+  set — this flag is about *which* certificate gets touched, not renewal
+  timing.
 
 - **`ERROR: (BadParameter) The specified PEM X.509 certificate content is in an
   unexpected format` from `az keyvault certificate import`, even though the file

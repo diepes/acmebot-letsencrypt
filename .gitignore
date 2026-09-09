@@ -3,6 +3,7 @@
 !.env.acmebot.example
 .env
 .env.*
+*.log
 
 # Local dev tooling (downloaded binaries, not committed)
 .tools/

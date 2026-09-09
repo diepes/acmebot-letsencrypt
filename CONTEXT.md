@@ -38,6 +38,63 @@ runs. Written to a local folder, then — if `AZ_KV_NAME` is set — also import
 Azure Key Vault. Unrelated to the Account key.
 _Avoid_: "the key"
 
+**Import PFX**:
+The single PKCS#12 file `acme-cron-update.sh` builds (via `openssl pkcs12 -export
+-legacy`) from the Certificate key and full chain, and the only artifact ever handed
+to `az keyvault certificate import` — never a hand-built PEM (see ADR 0003). Protected
+by a fresh random password each run unless `KEYVAULT_CERT_PFX_PASSWORD` is set to a
+fixed value (needed to export the same PFX back out of Key Vault later).
+_Avoid_: "the certificate file" (ambiguous — the local cert folder also has separate
+`.cer`/`.key`/`fullchain.pem` files that are never sent to Key Vault)
+
+### Pre-flight safety checks
+
+Run before ever calling `acme.sh --issue`; see ADR 0004 for why both always run to
+completion and report combined errors, rather than stopping at the first failure.
+
+**Renewal pre-check**:
+If `AZ_KV_NAME` is set, queries Key Vault for the existing certificate named
+`AZ_KV_CERT_NAME`'s expiry and SANs, to decide whether issuance is actually needed.
+Exists because `acme.sh`'s own internal skip-if-not-due logic can't be relied on — its
+state doesn't persist across separate container runs.
+_Avoid_: "renewal check" alone (ambiguous with acme.sh's own internal logic, which this
+replaces for this container's purposes)
+
+**SAN match check**:
+Inside the Renewal pre-check, compares the existing Key Vault certificate's stored
+SANs against the domains actually requested this run (`ACME_DOMAINS`) — necessary
+because `AZ_KV_CERT_NAME` is just a static label, decoupled from the domain list.
+Default behavior: a mismatch forces re-issuance regardless of expiry; an unverifiable
+lookup only warns and falls back to the expiry-only decision.
+_Avoid_: "domain check"
+
+**Migration safety guard** (`SAFETY_ONLY_UPD_IF_EXISTING_SAN_MATCH`):
+An opt-in, stricter variant of the SAN match check, meant to be enabled only for the
+one cutover run per domain and then unset — not a permanent operating mode. Escalates
+a not-found certificate, a confirmed SAN mismatch, or an unverifiable SAN lookup into a
+hard pre-flight failure (blocking issuance/import) instead of the default warning.
+Applies even under `FORCE_RENEW=true` — it guards *which* certificate is touched, not
+renewal timing. Exists to prevent silently overwriting the wrong, already-in-production
+Key Vault certificate when migrating an existing domain (issued by another CA/process)
+onto this script.
+_Avoid_: "strict mode" (too vague — there's only this one specific escalation)
+
+**DNS zone access pre-check**:
+Only for `ACME_DNS_MODE=azure`: lists the identity's accessible Azure DNS zones and
+matches by suffix against every requested domain — the same lookup `acme.sh`'s own
+`dns_azure` plugin performs internally — so a missing zone or missing read/list rights
+fails fast with a clear, actionable error instead of surfacing only after acme.sh's
+DNS-01 challenge attempt fails opaquely later.
+
+**Root CA safety check** (`SAFETY_ALERT_IF_ROOT_CA_NOT`):
+An opt-in guard, fails fast before the Key Vault import if the issued certificate's
+chain doesn't link back to a given root CA substring — catches e.g. an accidental
+staging (`letsencrypt_test`) issuance mistaken for production. Renamed from
+`VALIDATE_ROOT_CA` for clarity on what "failure" means (an alert/hard-stop, not silent
+validation).
+_Avoid_: "chain check", "cert validation" (too generic — this checks one specific
+thing, the root)
+
 **Persist TXT record**:
 The `_validation-persist.<domain>` DNS TXT record printed by the Bootstrap step and
 published once, manually, at the domain's DNS provider. Reused for every future
