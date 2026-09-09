@@ -16,10 +16,41 @@ Both take a single `ACME_DOMAINS` env var: a comma separated list of every domai
 certificate's SAN set (wildcard entries like `*.example.com` allowed).
 `acme-cron-update.sh` treats the first entry as the primary domain (CN).
 
-Uses acme.sh's **DNS persist mode** (`--dns-persist`) so `acme-cron-update.sh` never
-needs DNS write credentials.
+Uses acme.sh's **DNS persist mode** (`--dns-persist`) by default, so `acme-cron-update.sh`
+never needs DNS write credentials.
 
-### 1. Bootstrap (manual, once per domain set)
+**Production availability note:** Let's Encrypt currently accepts `dns-persist-01`
+on its staging endpoint, but the production endpoint may still reject it with
+`Supported validation types are: dns-01`. Use `ACME_SERVER=letsencrypt_test` for
+testing this flow. Production rollout was targeted for Q2 2026, but no firm
+availability date is currently published. See the [Let's Encrypt DNS-PERSIST-01
+announcement](https://letsencrypt.org/2026/02/18/dns-persist-01) and [current
+challenge documentation](https://letsencrypt.org/docs/challenge-types/).
+
+**Need a publicly-trusted certificate today?** Set `ACME_DNS_MODE=azure` (Azure DNS)
+or `ACME_DNS_MODE=aws` (Route53) on `acme-cron-update.sh` instead — fully-automated
+alternatives using acme.sh's `dns_azure`/`dns_aws` plugins against the domain's DNS
+zone API directly (work with production Let's Encrypt right now; see ADR
+[0002](docs/adr/0002-dns-api-fallback-until-persist-ships.md)). Both modes:
+- **azure**: needs `AZUREDNS_SUBSCRIPTIONID`, plus either `AZUREDNS_MANAGEDIDENTITY=true`
+  (real k8s deployment: uses the pod's managed identity, no secret needed) or — for
+  local/CI testing without one — reuses the same `AZURE_CLIENT_ID`/
+  `AZURE_CLIENT_SECRET`/`AZURE_TENANT_ID` already used for the Key Vault import
+  below (no separate `AZUREDNS_*` credential vars needed, unless this domain's zone
+  should use a different, more narrowly-scoped principal). Either way, that
+  principal/identity needs "DNS Zone Contributor" on the domain's Azure DNS zone.
+- **aws**: uses the standard `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` vars if set;
+  otherwise falls back automatically to the container/instance IAM role (ECS task
+  role or EC2 instance profile — no vars needed at all in that case). That
+  role/user needs Route53 `ChangeResourceRecordSets`/`GetChange`/`ListHostedZones*`
+  rights on the domain's hosted zone.
+- Puts standing DNS write credentials in the CronJob — the trade-off `--dns-persist`
+  exists to avoid — so only use it while persist mode is unavailable in production.
+- Skips the Bootstrap step below entirely: `acme-cron-update.sh` self-registers the
+  ACME account on first run, no `ACME_ID_SECRET_KEY`/pre-populated `ACME_HOME`
+  required.
+
+### 1. Bootstrap (manual, once per domain set — only for `ACME_DNS_MODE=persist`, the default)
 
 No local acme.sh install needed — use the same image the CronJob runs, with its
 entrypoint overridden to `acme-bootstrap.sh`. No volume mount is needed either: the
@@ -66,13 +97,32 @@ testing — no volume needs to be mounted at `ACME_HOME` either; only `/certs` (
 output) is bind-mounted:
 
 ```sh
+# acme-cron-update.sh
+docker build -t acmebot:local acme-app
 docker run --rm \
   --entrypoint /home/app/acme-cron-update.sh \
   --env-file .env.acmebot \
   -v "$(pwd)/out/certs:/certs" \
   acmebot:local
-  # env +AZ_KV_NAME, _CERT_NAME
+  # env +AZ_KV_NAME, _CERT_NAME, ACME_DNS_MODE
 ```
+
+To get a publicly-trusted certificate today (persist mode isn't validated by
+production Let's Encrypt yet — see above):
+- **Azure DNS**: add `ACME_DNS_MODE=azure` plus `AZUREDNS_SUBSCRIPTIONID` to
+  `.env.acmebot` — it reuses the `AZURE_SUBSCRIPTION_ID`/`AZURE_TENANT_ID`/
+  `AZURE_CLIENT_ID`/`AZURE_CLIENT_SECRET` already set above for auth (no separate
+  `AZUREDNS_*` credentials needed, unless this domain's DNS zone should use a
+  different principal), provided that principal also has "DNS Zone Contributor" on
+  the domain's Azure DNS zone — or set `AZUREDNS_MANAGEDIDENTITY=true` in a real k8s
+  deployment to use the pod's managed identity instead.
+- **Route53**: add `ACME_DNS_MODE=aws` to `.env.acmebot`, plus `AWS_ACCESS_KEY_ID`/
+  `AWS_SECRET_ACCESS_KEY` for local/CI testing (a real access key needs Route53
+  rights on the domain's hosted zone) — or leave both unset in a real ECS/EC2
+  deployment to use the container/instance IAM role instead.
+
+Either way, also set `ACME_SERVER=letsencrypt` for a
+real (non-staging) certificate. No Bootstrap step needed for domains run this way.
 
 acme.sh only reissues when a certificate is due for renewal. **Phase 1** (current):
 the cert + Certificate key are always written to a local folder; if `AZ_KV_NAME` is
@@ -116,6 +166,76 @@ than kept in a plain file.
 
 Try both steps locally with `docker-compose.yml` (`docker compose run --rm bootstrap`
 / `docker compose run --rm acmebot`) — see `.env.acmebot.example`.
+
+## Troubleshooting
+
+- **`ACME_DNS_MODE=azure` fails with `Invalid domain` / `invalid domain`**: the
+  `dns_azure` plugin lists all Azure DNS zones in `AZUREDNS_SUBSCRIPTIONID` (falling
+  back to `AZURE_SUBSCRIPTION_ID`) and matches the challenge domain against zone names
+  by suffix; this error means it never found a match. **`acme-cron-update.sh` now
+  checks this itself, before ever calling acme.sh** — it does the exact same
+  subscription-wide zone list + suffix match, and fails fast with a clear
+  `ERROR: no accessible Azure DNS zone found for: ...` (or a zone-list
+  permission error) instead of letting acme.sh burn a Let's Encrypt attempt only to
+  fail opaquely later. The two indistinguishable causes behind either error are
+  (a) that subscription ID isn't the one hosting the domain's actual Azure DNS
+  zone (e.g. it's reusing the Key Vault's subscription, not the DNS one), or (b) the
+  service principal/managed identity lacks read/list rights on that zone (or the whole
+  subscription's DNS zones). Set `ACME_DEBUG=1` (or `2`/`3` for more detail) to see the
+  raw zone-list REST response and confirm which. If it's (b) — a JSON body like
+  `"AuthorizationFailed": ... does not have authorization to perform action
+  'Microsoft.Network/dnszones/read' over scope '/subscriptions/<id>'` with HTTP 403 —
+  grant the principal DNS rights. **Important**: the failing call is a
+  *list-by-subscription* request, and Azure DNS does not filter that list down to
+  individually-scoped resources — a role assigned only at the zone itself is NOT
+  enough for the list to succeed. Grant two role assignments instead (least privilege):
+  ```sh
+  # 1. Reader on the resource group — lets the list-zones call see it:
+  az role assignment create --assignee <AZUREDNS_APPID-or-object-id> \
+    --role "Reader" --scope "/subscriptions/<sub>/resourceGroups/<rg>"
+  # 2. DNS Zone Contributor on the specific zone — lets it read/write the TXT record:
+  az role assignment create --assignee <AZUREDNS_APPID-or-object-id> \
+    --role "DNS Zone Contributor" \
+    --scope "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Network/dnszones/<zone-name>"
+  ```
+  (Or grant "DNS Zone Contributor" directly on the resource group instead of both —
+  simpler, but grants write access to every zone in that RG, not just this one.)
+  If it's (a), fix `AZUREDNS_SUBSCRIPTIONID` to point at the subscription that
+  actually hosts the zone instead.
+
+- **`too many certificates (N) already issued for this exact set of identifiers`
+  (HTTP 429, `urn:ietf:params:acme:error:rateLimited`)**: Let's Encrypt's production
+  server (`ACME_SERVER=letsencrypt`) allows only 5 certificates per exact set of
+  domains per rolling 168h (7-day) window — burned quickly if you re-run
+  `acme-cron-update.sh` repeatedly against production while iterating on this
+  script/config. The error message includes the exact retry time (UTC); there is no
+  way to bypass it early. **To avoid this**: do all iteration/testing against
+  `ACME_SERVER=letsencrypt_test` (staging) first — it exercises the exact same
+  issue → PFX-build → Key Vault import path with its own, much higher rate limits,
+  and only switch to `ACME_SERVER=letsencrypt` once the whole flow is confirmed
+  working end-to-end. Staging certs aren't publicly trusted, but Key Vault import
+  and metadata (Subject/Issuer/SAN) work identically for verifying the pipeline.
+
+- **`ERROR: (BadParameter) The specified PEM X.509 certificate content is in an
+  unexpected format` from `az keyvault certificate import`, even though the file
+  being imported is a genuinely valid PFX/PKCS#12** (correct password, correct PBE
+  algorithm, RSA or EC key — none of these matter for this specific error): Azure
+  Key Vault stores a certificate **policy** (including
+  `secret_properties.content_type`) per certificate *name*, and reuses that stored
+  policy for every subsequent import of a new *version* under the same name unless
+  a new policy is explicitly supplied with the import call. If any earlier import
+  attempt under that name was ever recorded with `content_type=application/x-pem-file`
+  (e.g. from a hand-built PEM approach, even a broken one), Key Vault keeps trying
+  to parse every later PFX upload as PEM text — which fails with this exact generic
+  error, no matter how correct the PFX itself is. This script now always passes
+  `--policy '{"secret_properties":{"content_type":"application/x-pkcs12"}}'`
+  on import to force the content type back to PKCS#12 regardless of history. If you
+  still hit this error after updating, you can also just delete (and purge, since
+  soft-delete is mandatory) the certificate object once — `az keyvault certificate
+  delete` + `az keyvault certificate purge` — to drop the stale policy entirely and
+  start clean. (Refs:
+  [winterdom.com](https://winterdom.com/2019/10/31/importing-keyvault-certificates-api),
+  [Stack Overflow #77954676](https://stackoverflow.com/questions/77954676/azure-certificate-import-bad-parameter).)
 
 ## Community
 

@@ -1,7 +1,8 @@
 
 # Environment variables
+!.env.acmebot.example
 .env
-.env.acmebot
+.env.*
 
 # Local dev tooling (downloaded binaries, not committed)
 .tools/

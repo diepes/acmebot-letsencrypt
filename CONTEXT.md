@@ -9,6 +9,10 @@ Runs as a k8s CronJob: issues/renews TLS certificates for one or more domains
 A manual, one-time, per domain-set operation, run via the `acme-bootstrap.sh`
 entrypoint, that registers the ACME account (if it doesn't exist yet) and prints the
 Persist TXT record(s) to publish. Not automated, not run by the CronJob.
+Only required for domains run with `ACME_DNS_MODE=persist` (the default) — a domain
+run entirely with `ACME_DNS_MODE=azure` or `ACME_DNS_MODE=aws` never needs it, since
+`acme-cron-update.sh` self-registers the ACME account on first run in those modes
+(see ADR 0002).
 
 **Account key**:
 The ACME account's private key, generated during the Bootstrap step. Identifies the
@@ -64,11 +68,14 @@ space-separated SAN list separate from the primary domain)
 **CronJob**:
 The unattended, recurring container invocation (the `acme-cron-update.sh` entrypoint)
 that renews certificates: reads `ACME_DOMAINS` and the Account key (from
-`ACME_ID_SECRET_KEY` or a pre-populated `ACME_HOME`), runs `acme.sh --issue
---dns-persist`, then (Phase 1) writes the certificate + Certificate key to a local
-folder always, and imports them into Azure Key Vault via the Azure CLI only if
-`AZ_KV_NAME` is set (empty/unset means local-folder-only). Has no DNS write
-access.
+`ACME_ID_SECRET_KEY` or a pre-populated `ACME_HOME` — required for `ACME_DNS_MODE=persist`,
+optional for `ACME_DNS_MODE=azure`/`ACME_DNS_MODE=aws`, which self-register instead), runs
+`acme.sh --issue` with `--dns-persist`, `--dns dns_azure`, or `--dns dns_aws` depending
+on `ACME_DNS_MODE`,
+then (Phase 1) writes the certificate + Certificate key to a local folder always, and
+imports them into Azure Key Vault via the Azure CLI only if `AZ_KV_NAME` is set
+(empty/unset means local-folder-only). Has no DNS write access in `persist` mode;
+in `azure`/`aws` mode it holds standing DNS write credentials (see ADR 0002).
 _Avoid_: operator (the operator is the human running the Bootstrap step)
 
 ## Chosen validation approach: DNS persist mode
@@ -102,6 +109,11 @@ in k8s) — see `acme-app/acme-scripts/`.
 
 ## Legacy: DNS API mode
 
-Older issuance used acme.sh's live DNS API hooks (`dns_azure`/`dns_aws`), which need
-standing DNS write credentials in the CronJob. No longer the default; kept only as a
-fallback for domains whose CA never adopts persist mode.
+~~Older issuance used acme.sh's live DNS API hooks (`dns_azure`/`dns_aws`), which need
+standing DNS write credentials in the CronJob.~~ **Superseded by ADR 0002**: these are
+now actively-used, opt-in per-domain modes (`ACME_DNS_MODE=azure`/`ACME_DNS_MODE=aws`),
+not merely historical — they're the only way to get a publicly-trusted certificate
+today, since no
+public CA has shipped `dns-persist-01` to production yet. Kept alongside `persist`
+mode (the default) rather than replacing it; expected to shrink back to true
+legacy/fallback status once production persist support ships. See ADR 0002.
