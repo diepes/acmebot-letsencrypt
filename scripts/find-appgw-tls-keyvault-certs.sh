@@ -54,7 +54,7 @@
 #
 # "text" format (default) groups rows by gateway:
 #   <appGatewayName> - <subscriptionName>
-#       <sslCertName>  listeners=<N>  <status>  SAN=<san>  <shortKeyVaultId>
+#       x<listenerCount two-digit padded> <sslCertName>  <status>  SAN=<san>  <shortKeyVaultId>
 #       ...(one line per certificate on that gateway)...
 #   <shortKeyVaultId> is <vaultName>/<secretName>/<version> (shortened
 #   from the full secret URL, for compact display only — see tsv/json
@@ -495,7 +495,7 @@ else
     [[ "${is_error}" == "1" ]] && status_color="red"
     colored_status="$(color_wrap "${status_color}" "${padded_status}")"
     kv_display="$([[ -n "${kv_secret_id}" ]] && kv_short "${kv_secret_id}" || printf '(uploaded, not in Key Vault)')"
-    printf '    %-28s listeners=%-3s %s SAN=%-40s %s\n' \
-      "${cert_name}" "${listener_count}" "${colored_status}" "${san_names:--}" "${kv_display}"
+    printf '    x%02d %-28s %s SAN=%-40s %s\n' \
+      "${listener_count}" "${cert_name}" "${colored_status}" "${san_names:--}" "${kv_display}"
   done
 fi
