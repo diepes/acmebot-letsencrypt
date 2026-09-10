@@ -96,6 +96,22 @@
 #                    overwriting an unrelated one. Applies even when
 #                    FORCE_RENEW=true is also set (this is about which
 #                    certificate gets touched, not renewal timing).
+#   KEYVAULT_CANCEL_PENDING_CERT_OP  (default: false) Key Vault refuses any
+#                    new certificate create/import for a name while that
+#                    name has a "pending" certificate operation stuck in
+#                    status "inProgress" (e.g. left over from a CSR-based
+#                    "Generate" started via the Portal/CLI and never
+#                    merged/canceled, or a prior crashed run) — the import
+#                    below fails with a Conflict error otherwise. This is
+#                    checked as part of the Key Vault pre-check (always, on
+#                    every run, before FORCE_RENEW/SAN checks) and is a
+#                    hard pre-flight failure by default, since silently
+#                    canceling someone else's genuinely in-progress
+#                    operation could be wrong. Set to "true" to instead
+#                    have this script automatically cancel a stale
+#                    "inProgress" pending operation itself and proceed —
+#                    only do this once you've confirmed nothing else is
+#                    legitimately mid-flight against this certificate name.
 #   ACME_DNS_MODE    "persist" (default) — the manual-TXT-record-once
 #                    dns-persist-01 flow bootstrapped by acme-bootstrap.sh.
 #                    Currently only validates on ACME_SERVER=letsencrypt_test
@@ -186,7 +202,7 @@ set -euo pipefail
 # timestamp) so a running container's actual code, and exactly when this
 # run started, can both be confirmed at a glance without having to compare
 # a full hash by hand.
-SCRIPT_VERSION="26"
+SCRIPT_VERSION="27"
 
 # Printed first, before anything else runs, so every run's log always
 # starts with an unambiguous "what code, and when" header — useful both to
@@ -356,6 +372,7 @@ mkdir -p "${CERT_DIR}"
 RENEWAL_THRESHOLD_DAYS="${RENEWAL_THRESHOLD_DAYS:-30}"
 FORCE_RENEW="${FORCE_RENEW:-false}"
 SAFETY_ONLY_UPD_IF_EXISTING_SAN_MATCH="${SAFETY_ONLY_UPD_IF_EXISTING_SAN_MATCH:-false}"
+KEYVAULT_CANCEL_PENDING_CERT_OP="${KEYVAULT_CANCEL_PENDING_CERT_OP:-false}"
 kv_check_error=""
 kv_skip_renewal=false
 kv_found=false
@@ -368,6 +385,41 @@ requested_normalized=""
 if [[ -n "${AZ_KV_NAME:-}" ]]; then
   if ! azure_kv_login; then
     kv_check_error="unable to authenticate to Azure (see error above)"
+  else
+    # Pending certificate operation check: runs unconditionally, even under
+    # FORCE_RENEW, since it's not about whether a renewal is due — Key
+    # Vault flatly refuses ANY new certificate create/import for this name
+    # while a "pending" operation on it is stuck in status "inProgress"
+    # (e.g. a CSR-based "Generate" started via the Portal/CLI and never
+    # merged/canceled, or a prior run of this script that crashed between
+    # starting one and completing the `az keyvault certificate import`
+    # below) — surfacing only as an opaque "(Conflict) ... pending ...
+    # inProgress" error from the import step otherwise. A 404 here (no
+    # pending operation at all) is the normal case and is silently fine.
+    kv_pending_output="$(az keyvault certificate pending show --vault-name "${AZ_KV_NAME}" --name "${AZ_KV_CERT_NAME}" --query "status" -o tsv 2>&1)" && kv_pending_status=0 || kv_pending_status=$?
+    kv_pending_output_lc="$(echo "${kv_pending_output}" | tr '[:upper:]' '[:lower:]')"
+    if [[ ${kv_pending_status} -eq 0 && "${kv_pending_output}" == "inProgress" ]]; then
+      if [[ "${KEYVAULT_CANCEL_PENDING_CERT_OP}" == "true" ]]; then
+        echo "==> Key Vault '${AZ_KV_NAME}' has a pending certificate operation for '${AZ_KV_CERT_NAME}' stuck in status 'inProgress' — KEYVAULT_CANCEL_PENDING_CERT_OP=true, canceling it now..."
+        if az keyvault certificate pending delete --vault-name "${AZ_KV_NAME}" --name "${AZ_KV_CERT_NAME}" --output none 2>&1; then
+          echo "==> Pending certificate operation for '${AZ_KV_CERT_NAME}' canceled — proceeding."
+        else
+          kv_check_error="KEYVAULT_CANCEL_PENDING_CERT_OP=true but failed to cancel the pending certificate operation for '${AZ_KV_CERT_NAME}' in Key Vault '${AZ_KV_NAME}' — check the identity has the Key Vault 'Certificates - Delete'/'Managecontacts' right needed for 'az keyvault certificate pending delete'."
+        fi
+      else
+        kv_check_error="Key Vault '${AZ_KV_NAME}' already has a pending certificate operation for '${AZ_KV_CERT_NAME}' stuck in status 'inProgress' (e.g. left over from a CSR-based 'Generate' started via the Portal/CLI and never merged/canceled, or a prior crashed run) — Key Vault refuses any new create/import for this name until it's resolved. Cancel it with: az keyvault certificate pending delete --vault-name ${AZ_KV_NAME} --name ${AZ_KV_CERT_NAME}  (or set KEYVAULT_CANCEL_PENDING_CERT_OP=true to have this script do that automatically, once you've confirmed nothing else is legitimately mid-flight against this certificate name)."
+      fi
+    elif [[ ${kv_pending_status} -ne 0 && "${kv_pending_output}" != *"PendingCertificateNotFound"* && "${kv_pending_output_lc}" != *"not found"* ]]; then
+      # Anything other than "no pending operation exists" is worth
+      # surfacing, but best-effort only (this check is a diagnostic
+      # convenience, not the authoritative source of truth Key Vault
+      # itself is at import time) — don't block issuance on it alone.
+      echo "==> WARNING: could not check Key Vault '${AZ_KV_NAME}' for a pending certificate operation on '${AZ_KV_CERT_NAME}' (${kv_pending_output}) — proceeding anyway; if the import below fails with a Conflict/'pending'/'inProgress' error, cancel it manually with 'az keyvault certificate pending delete'."
+    fi
+  fi
+  if [[ -n "${kv_check_error}" ]]; then
+    : # pending-operation check (or auth) above already failed — skip the
+      # renewal/SAN checks below, nothing to gain from running them too.
   elif [[ "${FORCE_RENEW}" == "true" && "${SAFETY_ONLY_UPD_IF_EXISTING_SAN_MATCH}" != "true" ]]; then
     echo "==> FORCE_RENEW=true: skipping the Key Vault renewal check, issuing/renewing unconditionally"
   else

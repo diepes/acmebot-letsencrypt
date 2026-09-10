@@ -60,6 +60,18 @@ state doesn't persist across separate container runs.
 _Avoid_: "renewal check" alone (ambiguous with acme.sh's own internal logic, which this
 replaces for this container's purposes)
 
+**Pending certificate operation check**:
+Also under the Renewal pre-check, queries Key Vault for a "pending" certificate
+operation on `AZ_KV_CERT_NAME` left in status `inProgress` (e.g. an abandoned
+CSR-based "Generate"/"Create", or a prior crashed run of this script) — Key Vault
+flatly refuses any new create/import for that name while one exists. Unlike the SAN
+match check below, this is a hard pre-flight failure by default (not a warning), since
+it isn't a judgment call — the import would fail regardless. Runs unconditionally,
+even under `FORCE_RENEW=true`. `KEYVAULT_CANCEL_PENDING_CERT_OP` opts into having this
+script cancel the stale operation itself instead of just failing with guidance.
+_Avoid_: "stuck certificate" (the certificate itself isn't stuck — it's Key Vault's
+pending *operation* record for that name)
+
 **SAN match check**:
 Inside the Renewal pre-check, compares the existing Key Vault certificate's stored
 SANs against the domains actually requested this run (`ACME_DOMAINS`) — necessary

@@ -3,6 +3,45 @@
 A small container that issues/renews TLS certificates with [acme.sh](https://github.com/acmesh-official/acme.sh)
 and stores them in Azure Key Vault. Runs as a k8s CronJob.
 
+## TODO:
+- Terraform
+  - Cert k8s nginx
+      kubectl_manifest.secret-provider-class will be updated in-place
+      ~ resource "kubectl_manifest" "secret-provider-class"
+         objectVersion:
+  - New/Update CERT - GlobalSign
+      infrastructure/spoke-infra/src/modules/shared-keyvault/main.tf
+        - infrastructure/spoke-infra/src/modules/shared-keyvault/main.tf
+        - module "domain_cert" {
+      # module.sharedkv.module.domain_cert[0].azurerm_key_vault_certificate.wildcard-cert will be updated in-place
+      ~ resource "azurerm_key_vault_certificate" "wildcard-cert" {
+           name = "wildcard-cert-agic-backoffice"
+           >>> Manual state delete P + NP, logic to bloc aue + backoffice
+      # module.sharedkv.module.domain_cert[0].azurerm_key_vault_secret.wildcard-cert-key will be updated in-place
+      ~ resource "azurerm_key_vault_secret" "wildcard-cert-key" {
+           name = "wildcard-cert-agic-backoffice-key"
+           >>> Manual state delete P + NP, logic to bloc aue + backoffice
+
+  - AppGW
+      # azurerm_application_gateway.app_gateway will be updated in-place
+      ~ resource "azurerm_application_gateway" "app_gateway" {
+           name = "p-aue-backoffice-appgw"
+           name = "p-usc-backoffice-appgw"
+           tags = { "managed-by-k8s-ingress" = "1.9.4/a2166a43/2025-12-01-12:33T-0800" }
+           >>> pr AZR-5543 versionless_secret_id
+  - Nginx restricted
+      # helm_release.nginx-ingress-controller-restricted will be updated in-place
+      ~ resource "helm_release" "nginx-ingress-controller-restricted" {
+          id/name = "ingress-nginx-restricted"
+          >>>> infrastructure/spoke-infra/src/modules/aks-addons/internal_ingress.tf
+  - aks - secret-provider-class ?? kv integration
+      # kubectl_manifest.secret-provider-class will be updated in-place
+      ~ resource "kubectl_manifest" "secret-provider-class" {
+          name = "azure-kv-spc"
+          keyvaultName: pauebackofficesharedkv
+          objectName: wildcard-cert-agic-backoffice
+          objectName: wildcard-cert-agic-backoffice-key
+
 ## How it works
 
 The container's default entrypoint is acme.sh itself. Two scripts baked into the
@@ -168,6 +207,16 @@ than kept in a plain file.
 Try both steps locally with `docker-compose.yml` (`docker compose run --rm bootstrap`
 / `docker compose run --rm acmebot`) — see `.env.acmebot.example`.
 
+Migrating existing App Gateways' TLS certificates to this project? `./scripts/`
+(repo root) holds other one-off, read-only `az` CLI helpers not run by the
+container/CronJob — e.g. `find-appgw-tls-keyvault-certs.sh`, which scans every
+Application Gateway across a subscription/tenant and reports each HTTPS listener's
+certificate and the Key Vault it's sourced from (if any), useful for finding
+`AZ_KV_NAME`/`AZ_KV_CERT_NAME` values before onboarding an existing certificate (see
+`SAFETY_ONLY_UPD_IF_EXISTING_SAN_MATCH` in Troubleshooting below for the accompanying
+migration safety check). Run locally with `az` already logged in — see the script's
+own header comment for options.
+
 ## Troubleshooting
 
 - **`ACME_DNS_MODE=azure` fails with `Invalid domain` / `invalid domain`**: the
@@ -276,6 +325,26 @@ Try both steps locally with `docker-compose.yml` (`docker compose run --rm boots
   normal ongoing renewals. Applies even when `FORCE_RENEW=true` is also
   set — this flag is about *which* certificate gets touched, not renewal
   timing.
+
+- **`ERROR: (Conflict) A new key vault certificate can not be created or
+  imported while a pending key vault certificate's status is inProgress`**
+  from `az keyvault certificate import`: Key Vault flatly refuses any new
+  certificate create/import for a name while that name already has a
+  "pending" certificate operation — check with `az keyvault certificate
+  pending show --vault-name <vault> --name <cert-name>` (a `"status":
+  "inProgress"` in the output confirms it). This is usually left over from
+  a CSR-based "Generate"/"Create" flow started via the Portal/CLI and never
+  merged or canceled, or a prior run of this script that crashed between
+  starting one and completing the import. This script now checks for this
+  as part of the Key Vault pre-check, on every run (even under
+  `FORCE_RENEW=true`, since this isn't about renewal timing), and fails
+  fast with this same guidance instead of only surfacing as this opaque
+  error from the import step. Fix it with `az keyvault certificate pending
+  delete --vault-name <vault> --name <cert-name>`, or set
+  `KEYVAULT_CANCEL_PENDING_CERT_OP=true` to have this script cancel a stale
+  `inProgress` pending operation itself before proceeding (only do this
+  once you've confirmed nothing else is legitimately mid-flight against
+  that certificate name).
 
 - **`ERROR: (BadParameter) The specified PEM X.509 certificate content is in an
   unexpected format` from `az keyvault certificate import`, even though the file
